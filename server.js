@@ -3,14 +3,15 @@ import express from "express";
 const app = express();
 app.use(express.json({ limit: "50mb" }));
 
-const apiKeys = (process.env.GEMINI_API_KEYS || "")
-  .split(",")
+const rawKeys =
+  process.env.GEMINI_API_KEYS ||
+  process.env.GEMINI_API_KEY ||
+  "";
+
+const apiKeys = rawKeys
+  .split(/[,;\n]/)
   .map(k => k.trim())
   .filter(Boolean);
-
-if (!apiKeys.length) {
-  console.error("No GEMINI_API_KEYS provided");
-}
 
 async function callGeminiWithKey(apiKey, payload) {
   const r = await fetch(
@@ -39,12 +40,10 @@ app.post("/tts", async (req, res) => {
     for (const key of apiKeys) {
       const { response, data } = await callGeminiWithKey(key, payload);
 
-      // Успех
       if (response.ok) {
         return res.status(200).json(data);
       }
 
-      // Квота / 429 — пробуем следующий ключ
       const status = response.status;
       const errStatus = data?.error?.status;
       if (status === 429 || errStatus === "RESOURCE_EXHAUSTED") {
@@ -52,11 +51,9 @@ app.post("/tts", async (req, res) => {
         continue;
       }
 
-      // Любая другая ошибка — отдаём сразу
       return res.status(status).json(data);
     }
 
-    // Если все ключи кончились по квоте
     return res.status(429).json({
       error: "All API keys exhausted",
       lastError,
